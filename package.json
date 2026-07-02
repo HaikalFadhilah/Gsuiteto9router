@@ -1,0 +1,22 @@
+{
+  "name": "gsuite-to-9router",
+  "version": "2.0.0",
+  "description": "Bulk add & manage Google accounts on 9Router Antigravity provider via API",
+  "main": "bot.js",
+  "scripts": {
+    "add": "node bot.js",
+    "delete": "node delete.js"
+  },
+  "keywords": [
+    "9router",
+    "antigravity",
+    "google",
+    "oauth",
+    "automation"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^24.43.1"
+  }
+}

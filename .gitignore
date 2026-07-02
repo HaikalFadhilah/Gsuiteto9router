@@ -1,0 +1,5 @@
+node_modules/
+.vscode/
+akun.txt
+debug-*.png
+*.log
