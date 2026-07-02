@@ -3,8 +3,6 @@ const http = require('http');
 const ROUTER_URL = 'http://localhost:20128';
 const ROUTER_PASSWORD = '123456';
 
-// ==================== HTTP HELPERS ====================
-
 function request(method, urlStr, { body, cookie } = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -51,8 +49,6 @@ function extractAuthCookie(cookies) {
   return null;
 }
 
-// ==================== 9ROUTER API ====================
-
 async function routerLogin() {
   console.log('[9Router] Login...');
   const res = await request('POST', `${ROUTER_URL}/api/auth/login`, {
@@ -87,27 +83,21 @@ async function deleteProvider(cookie, id) {
   return res.status === 200;
 }
 
-// ==================== DETECTION LOGIC ====================
-
 function analyzeConnection(connection, usage) {
   const reasons = [];
 
-  // 1. Cek error 429 (quota reached) dari connection data
   if (connection.errorCode === 429) {
     reasons.push('error 429 (quota reached)');
   }
 
-  // 2. Cek lastError mengandung "quota"
   if (connection.lastError && connection.lastError.toLowerCase().includes('quota')) {
     reasons.push('lastError: quota reached');
   }
 
-  // 3. Cek testStatus
   if (connection.testStatus === 'error') {
     reasons.push('testStatus: error');
   }
 
-  // 4. Cek usage quotas — model yang 1000/1000 atau remainingPercentage = 0
   if (usage && usage.quotas) {
     const models = Object.entries(usage.quotas);
     let allExhausted = true;
@@ -128,12 +118,9 @@ function analyzeConnection(connection, usage) {
 
     if (allExhausted && models.length > 0) {
       reasons.push(`semua model habis (${exhaustedModels.length} model)`);
-    } else if (exhaustedModels.length > 0) {
-      // Sebagian habis — masih bisa dipakai model lain, JANGAN delete
     }
   }
 
-  // Delete kalau: semua model habis, ATAU error 429 + quota reached
   const shouldDel = reasons.length > 0 && (
     reasons.some(r => r.includes('semua model habis')) ||
     (connection.errorCode === 429 && connection.lastError?.toLowerCase().includes('quota'))
@@ -161,8 +148,6 @@ function formatQuotaSummary(usage) {
   return `${exhausted} habis, ${active} aktif (total ${models.length} model)`;
 }
 
-// ==================== MAIN ====================
-
 (async () => {
   try {
     const cookie = await routerLogin();
@@ -170,7 +155,6 @@ function formatQuotaSummary(usage) {
     const connections = await getProviders(cookie);
     console.log(`Total connections: ${connections.length}\n`);
 
-    // Filter antigravity
     const agConns = connections.filter(c =>
       c.provider === 'antigravity' || c.provider === 'ag'
     );
@@ -185,30 +169,26 @@ function formatQuotaSummary(usage) {
 
     const toDelete = [];
     const toKeep = [];
-
-    // Parallel fetch — 5 sekaligus biar cepat
     const BATCH = 5;
+
     for (let i = 0; i < agConns.length; i += BATCH) {
       const batch = agConns.slice(i, i + BATCH);
 
       await Promise.all(batch.map(async (conn) => {
         const name = conn.name || conn.email || conn.displayName || conn.id;
 
-        // Fast path: kalau connection udah 429 + quota, langsung delete tanpa fetch usage
         if (conn.errorCode === 429 && conn.lastError?.toLowerCase().includes('quota')) {
           toDelete.push({ conn, reasons: ['error 429 (quota reached)'] });
           console.log(`  [✗] ${name} — HAPUS (error 429, quota reached)`);
           return;
         }
 
-        // Kalau testStatus error, langsung delete
         if (conn.testStatus === 'error') {
           toDelete.push({ conn, reasons: ['testStatus: error'] });
           console.log(`  [✗] ${name} — HAPUS (testStatus: error)`);
           return;
         }
 
-        // Fetch usage hanya kalau status ambiguous
         const usage = await getUsage(cookie, conn.id);
         const { shouldDelete, reasons } = analyzeConnection(conn, usage);
         const summary = formatQuotaSummary(usage);
@@ -232,7 +212,6 @@ function formatQuotaSummary(usage) {
       return;
     }
 
-    // Delete — parallel 5 sekaligus
     let deleted = 0;
     let failed = 0;
 
@@ -251,15 +230,13 @@ function formatQuotaSummary(usage) {
       }));
     }
 
-    // Reset status akun yang masih ada — clear error biar balik active
     if (toKeep.length > 0) {
       console.log(`\nResetting status ${toKeep.length} akun yang masih aktif...\n`);
 
       await Promise.all(toKeep.map(async (conn) => {
         const name = conn.name || conn.email || conn.displayName || conn.id;
 
-        // Clear error fields via PUT update
-        const clearRes = await request('PUT', `${ROUTER_URL}/api/providers/${conn.id}`, {
+        await request('PUT', `${ROUTER_URL}/api/providers/${conn.id}`, {
           cookie,
           body: {
             testStatus: 'active',
@@ -270,9 +247,7 @@ function formatQuotaSummary(usage) {
           },
         });
 
-        // Trigger test biar 9router verify ulang
         const testRes = await request('POST', `${ROUTER_URL}/api/providers/${conn.id}/test`, { cookie });
-
         const newStatus = testRes.data?.valid ? 'active' : (testRes.data?.testStatus || '?');
         console.log(`  [↻] ${name} — status: ${newStatus}`);
       }));
